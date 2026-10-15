@@ -1,0 +1,28 @@
+[project]
+name = "chat-api"
+version = "1.0.0"
+description = "Real-time trader chat: persists messages to a Redis Stream and fans them out over WebSockets"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "redis>=5.2",
+    "prometheus-client>=0.21",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "httpx2>=1.0",      # required by FastAPI's TestClient
+    "fakeredis>=2.26",  # in-memory Redis: unit tests run without a real Redis (and in CI)
+    "ruff>=0.8",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+extend-select = ["I"]  # sort imports
