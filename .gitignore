@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Local data produced by the archiver (compliance archive, never committed)
+data/
+*.jsonl
+
+# Secrets: never commit them (kubeconfig, env files, keys, Terraform state)
+.env
+.env.*
+*.pem
+*.key
+kubeconfig*
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
