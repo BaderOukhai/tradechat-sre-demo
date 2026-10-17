@@ -1,0 +1,46 @@
+# Step 6a: chat-api with the minimum needed to see Deployment -> ReplicaSet -> Pods -> Service.
+# Resources, probe tuning, anti-affinity and the PDB come with the Helm chart (step 6b).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chat-api
+spec:
+  # 3 replicas: losing one pod (crash, rolling update, node drain) still leaves 2 serving.
+  replicas: 3
+  selector:
+    matchLabels:
+      app: chat-api  # the Deployment (through its ReplicaSet) owns every pod with this label
+  template:  # the "mould" used to create each pod
+    metadata:
+      labels:
+        app: chat-api  # must match the selector above, or the Deployment is rejected
+    spec:
+      containers:
+        - name: chat-api
+          # Loaded with "kind load"; a fixed tag means imagePullPolicy IfNotPresent,
+          # so Kubernetes uses the local copy instead of pulling from a registry.
+          image: tradechat/chat-api:1.0.1
+          ports:
+            - containerPort: 8000
+          env:
+            - name: REDIS_URL
+              value: redis://redis:6379/0  # "redis" = the Service name, resolved by cluster DNS
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8000
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chat-api
+spec:
+  selector:
+    app: chat-api  # traffic goes to the READY pods carrying this label
+  ports:
+    - port: 8000
+      targetPort: 8000

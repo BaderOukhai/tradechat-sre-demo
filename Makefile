@@ -1,6 +1,6 @@
 # tradechat-sre-demo — entry points. Targets are added step by step.
 .DEFAULT_GOAL := help
-.PHONY: help tools up down load
+.PHONY: help tools up down load cluster images
 
 TOOLS := docker kind kubectl helm python3.12 git uv
 
@@ -23,3 +23,12 @@ down: ## Stop the stack (volumes kept: the archive must survive routine commands
 
 load: ## Run simulated traders against localhost:8000 (e.g. make load ARGS="--duration 30")
 	uv run loadgen/loadgen.py $(ARGS)
+
+CLUSTER := tradechat
+
+cluster: ## Create the kind cluster (1 control-plane + 2 workers)
+	kind create cluster --name $(CLUSTER) --config deploy/kind-config.yaml
+
+images: ## Build the app images and load them into the kind nodes (no registry needed)
+	docker compose build
+	kind load docker-image tradechat/chat-api:1.0.1 tradechat/archiver:1.0.1 --name $(CLUSTER)
