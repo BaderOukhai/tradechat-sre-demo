@@ -1,0 +1,27 @@
+[project]
+name = "archiver"
+version = "1.0.0"
+description = "Compliance archiver: consumes the message stream and writes every message to a JSONL archive"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "redis>=5.2",
+    "prometheus-client>=0.21",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "fakeredis>=2.26",  # in-memory Redis: unit tests run without a real Redis (and in CI)
+    "ruff>=0.8",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+extend-select = ["I"]  # sort imports
