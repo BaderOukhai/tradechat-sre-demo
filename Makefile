@@ -1,6 +1,6 @@
 # tradechat-sre-demo — entry points. Targets are added step by step.
 .DEFAULT_GOAL := help
-.PHONY: help tools
+.PHONY: help tools up down
 
 TOOLS := docker kind kubectl helm python3.12 git uv
 
@@ -13,3 +13,10 @@ tools: ## Check that every required tool is installed
 		else echo "MISSING  $$t  (brew install $$t)"; exit 1; fi; \
 	done
 	@docker info >/dev/null 2>&1 && echo "ok       docker daemon running" || (echo "MISSING  docker daemon (start Docker Desktop)"; exit 1)
+
+up: ## Build images and start redis, chat-api, archiver (docker compose)
+	docker compose up --build -d
+	docker compose ps
+
+down: ## Stop the stack (volumes kept: the archive must survive routine commands)
+	docker compose down

@@ -1,0 +1,46 @@
+# Local dev loop: the 3 services on one machine, before Kubernetes (step 6).
+services:
+  redis:
+    image: redis:7-alpine
+    # AOF persistence: the stream (incl. messages not yet archived) survives a Redis restart.
+    # Default fsync "everysec": at most ~1 s of writes lost on a hard crash.
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    # No host port: services reach it as redis:6379 on the compose network
+    # (and host port 6379 is already used by another project).
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  chat-api:
+    build: ./apps/chat-api
+    # Versioned tag, never "latest": a rollback needs to know exactly what ran before.
+    image: tradechat/chat-api:1.0.0
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      FAULT_LATENCY_MS: ${FAULT_LATENCY_MS:-0}
+    ports:
+      - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  archiver:
+    build: ./apps/archiver
+    image: tradechat/archiver:1.0.0
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - archive-data:/data
+    ports:
+      - "8001:8000"  # host 8001, because chat-api already takes 8000 on the host
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  redis-data:
+  archive-data:
