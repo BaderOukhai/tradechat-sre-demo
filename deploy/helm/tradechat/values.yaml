@@ -1,0 +1,23 @@
+# The knobs of the chart. Templates read them as {{ .Values.<path> }}.
+# Override at install time: helm upgrade --install ... --set chatApi.replicas=5
+
+chatApi:
+  # 3: losing one pod (crash, rolling update, node drain) still leaves 2 serving.
+  replicas: 3
+  image:
+    repository: tradechat/chat-api
+    tag: "1.0.1"
+  # Fault injection (step 9): 300 simulates a bad release. 0 = healthy.
+  faultLatencyMs: 0
+
+archiver:
+  image:
+    repository: tradechat/archiver
+    tag: "1.0.1"
+  # ~1 KB per message x 20 msg/s x a 2 h demo = ~150 MB: 1Gi leaves a wide margin.
+  storage: 1Gi
+
+redis:
+  image: redis:7-alpine
+  # Holds the stream (AOF file) until messages are archived: small is enough for a demo.
+  storage: 1Gi

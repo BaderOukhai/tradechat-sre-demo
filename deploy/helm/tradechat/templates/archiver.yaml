@@ -1,0 +1,65 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: archive-data
+spec:
+  accessModes:
+    - ReadWriteOnce  # mounted by one node at a time: fine for a single archiver
+  resources:
+    requests:
+      storage: {{ .Values.archiver.storage }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: archiver
+  labels:
+    app: archiver
+spec:
+  # 1: the archive is one ReadWriteOnce volume. Several archivers would each need their own
+  # volume (a StatefulSet); the consumer group already supports that if throughput requires it.
+  replicas: 1
+  strategy:
+    type: Recreate  # stop the old pod before starting the new one: the volume can't be mounted twice
+  selector:
+    matchLabels:
+      app: archiver
+  template:
+    metadata:
+      labels:
+        app: archiver
+    spec:
+      containers:
+        - name: archiver
+          image: "{{ .Values.archiver.image.repository }}:{{ .Values.archiver.image.tag }}"
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: REDIS_URL
+              value: redis://redis:6379/0
+          volumeMounts:
+            - name: archive
+              mountPath: /data  # ARCHIVE_DIR in the image
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+      volumes:
+        - name: archive
+          persistentVolumeClaim:
+            claimName: archive-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: archiver  # no user traffic: only for Prometheus to scrape /metrics (step 7)
+  labels:
+    app: archiver
+spec:
+  selector:
+    app: archiver
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http

@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chat-api
+  labels:
+    app: chat-api
+spec:
+  replicas: {{ .Values.chatApi.replicas }}
+  selector:
+    matchLabels:
+      app: chat-api
+  template:
+    metadata:
+      labels:
+        app: chat-api
+    spec:
+      containers:
+        - name: chat-api
+          image: "{{ .Values.chatApi.image.repository }}:{{ .Values.chatApi.image.tag }}"
+          ports:
+            - name: http  # named port: probes and the Prometheus ServiceMonitor (step 7) use it
+              containerPort: 8000
+          env:
+            - name: REDIS_URL
+              value: redis://redis:6379/0  # "redis" = the Service name, resolved by CoreDNS
+            - name: FAULT_LATENCY_MS
+              value: {{ .Values.chatApi.faultLatencyMs | quote }}  # env values must be strings
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chat-api
+  labels:
+    app: chat-api
+spec:
+  selector:
+    app: chat-api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http

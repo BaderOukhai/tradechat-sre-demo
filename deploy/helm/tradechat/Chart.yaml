@@ -1,0 +1,6 @@
+apiVersion: v2
+name: tradechat
+description: Real-time trader chat with compliance archiving (local SRE demo)
+type: application
+version: 0.1.0       # version of the chart itself (templates, defaults)
+appVersion: "1.0.1"  # version of the application images it deploys by default

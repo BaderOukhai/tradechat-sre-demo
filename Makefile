@@ -1,6 +1,6 @@
 # tradechat-sre-demo — entry points. Targets are added step by step.
 .DEFAULT_GOAL := help
-.PHONY: help tools up down load cluster images
+.PHONY: help tools up down load cluster images deploy port-forward
 
 TOOLS := docker kind kubectl helm python3.12 git uv
 
@@ -32,3 +32,9 @@ cluster: ## Create the kind cluster (1 control-plane + 2 workers)
 images: ## Build the app images and load them into the kind nodes (no registry needed)
 	docker compose build
 	kind load docker-image tradechat/chat-api:1.0.1 tradechat/archiver:1.0.1 --name $(CLUSTER)
+
+deploy: ## Install or upgrade the tradechat Helm release, wait until pods are ready
+	helm upgrade --install tradechat deploy/helm/tradechat --wait --timeout 3m
+
+port-forward: ## Expose the chat-api Service on localhost:8000 (keep it running)
+	kubectl port-forward svc/chat-api 8000:8000
