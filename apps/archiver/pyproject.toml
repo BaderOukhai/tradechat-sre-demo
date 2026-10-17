@@ -1,6 +1,6 @@
 [project]
 name = "archiver"
-version = "1.0.0"
+version = "1.0.1"
 description = "Compliance archiver: consumes the message stream and writes every message to a JSONL archive"
 requires-python = ">=3.12"
 dependencies = [

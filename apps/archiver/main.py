@@ -11,6 +11,8 @@ from pathlib import Path
 import redis.asyncio as aioredis
 from fastapi import FastAPI, HTTPException, Response
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, generate_latest
+from redis.asyncio.retry import Retry
+from redis.backoff import ExponentialBackoff
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 ARCHIVE_DIR = Path(os.getenv("ARCHIVE_DIR", "data"))
@@ -84,7 +86,15 @@ async def run(r: aioredis.Redis) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.redis = aioredis.from_url(REDIS_URL, decode_responses=True)
+    # On a dead connection (e.g. a pooled socket left stale by a Redis restart), reconnect and
+    # retry up to 3 times with ~8/16/32 ms backoff: invisible to clients, far below the 200 ms
+    # SLO. A real outage still fails after that and surfaces as 503 / not ready.
+    app.state.redis = aioredis.from_url(
+        REDIS_URL,
+        decode_responses=True,
+        retry=Retry(ExponentialBackoff(), 3),
+        retry_on_error=[aioredis.ConnectionError],
+    )
     app.state.task = asyncio.create_task(run(app.state.redis))
     yield
     app.state.task.cancel()

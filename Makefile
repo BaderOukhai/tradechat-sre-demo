@@ -1,6 +1,6 @@
 # tradechat-sre-demo — entry points. Targets are added step by step.
 .DEFAULT_GOAL := help
-.PHONY: help tools up down
+.PHONY: help tools up down load
 
 TOOLS := docker kind kubectl helm python3.12 git uv
 
@@ -20,3 +20,6 @@ up: ## Build images and start redis, chat-api, archiver (docker compose)
 
 down: ## Stop the stack (volumes kept: the archive must survive routine commands)
 	docker compose down
+
+load: ## Run simulated traders against localhost:8000 (e.g. make load ARGS="--duration 30")
+	uv run loadgen/loadgen.py $(ARGS)

@@ -18,7 +18,7 @@ services:
   chat-api:
     build: ./apps/chat-api
     # Versioned tag, never "latest": a rollback needs to know exactly what ran before.
-    image: tradechat/chat-api:1.0.0
+    image: tradechat/chat-api:1.0.1
     environment:
       REDIS_URL: redis://redis:6379/0
       FAULT_LATENCY_MS: ${FAULT_LATENCY_MS:-0}
@@ -30,7 +30,7 @@ services:
 
   archiver:
     build: ./apps/archiver
-    image: tradechat/archiver:1.0.0
+    image: tradechat/archiver:1.0.1
     environment:
       REDIS_URL: redis://redis:6379/0
     volumes:
