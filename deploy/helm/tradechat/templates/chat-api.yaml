@@ -6,6 +6,11 @@ metadata:
     app: chat-api
 spec:
   replicas: {{ .Values.chatApi.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0  # never fewer ready pods than "replicas" during a deploy
+      maxSurge: 1        # one extra pod at a time: small footprint on a laptop
   selector:
     matchLabels:
       app: chat-api
@@ -14,6 +19,24 @@ spec:
       labels:
         app: chat-api
     spec:
+      # Spread replicas over nodes: a node failure must not take most of them down.
+      # maxSkew 1 = the most and least loaded nodes differ by at most 1 pod (3 pods -> 2+1).
+      # Not a hard pod anti-affinity: with 3 pods and 2 workers, the 3rd pod would stay Pending.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          # Ignore tainted nodes (control-plane, a NotReady node): otherwise they count as
+          # "0 pods" and block scheduling; a dead node's pods then go to the survivor.
+          nodeTaintsPolicy: Honor
+          labelSelector:
+            matchLabels:
+              app: chat-api
+      securityContext:
+        runAsNonRoot: true   # refuse to start if the image ever runs as root
+        runAsUser: 10001     # the UID created in the Dockerfile
+        seccompProfile:
+          type: RuntimeDefault  # block rarely needed, risky syscalls
       containers:
         - name: chat-api
           image: "{{ .Values.chatApi.image.repository }}:{{ .Values.chatApi.image.tag }}"
@@ -25,14 +48,25 @@ spec:
               value: redis://redis:6379/0  # "redis" = the Service name, resolved by CoreDNS
             - name: FAULT_LATENCY_MS
               value: {{ .Values.chatApi.faultLatencyMs | quote }}  # env values must be strings
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true  # the app writes nothing: an attacker can't drop files
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.chatApi.resources | nindent 12 }}
           readinessProbe:
             httpGet:
               path: /readyz
               port: http
+            periodSeconds: 5     # Redis lost -> out of traffic within ~10 s
+            failureThreshold: 2
           livenessProbe:
             httpGet:
               path: /healthz
               port: http
+            periodSeconds: 10    # restart only after ~30 s without answer:
+            failureThreshold: 3  # a short CPU spike must not trigger a restart
 ---
 apiVersion: v1
 kind: Service
@@ -47,3 +81,15 @@ spec:
     - name: http
       port: 8000
       targetPort: http
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: chat-api
+spec:
+  # Voluntary disruptions (node drain, cluster upgrade) may evict at most 1 of the 3 pods at
+  # a time. Crashes and OOMKills are not covered: that's what replicas and spreading are for.
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: chat-api

@@ -9,6 +9,15 @@ chatApi:
     tag: "1.0.1"
   # Fault injection (step 9): 300 simulates a bad release. 0 = healthy.
   faultLatencyMs: 0
+  # Measured: ~55Mi idle (cgroup memory.current). Request = what the scheduler reserves;
+  # memory limit = 2x usage for load spikes, beyond that the pod is OOMKilled.
+  # No CPU limit on purpose: CPU throttling would add latency and hurt the 200 ms SLO.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
 
 archiver:
   image:
@@ -16,8 +25,23 @@ archiver:
     tag: "1.0.1"
   # ~1 KB per message x 20 msg/s x a 2 h demo = ~150 MB: 1Gi leaves a wide margin.
   storage: 1Gi
+  # Measured: ~55Mi idle; batch work, so a smaller CPU request than chat-api.
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
 
 redis:
   image: redis:7-alpine
   # Holds the stream (AOF file) until messages are archived: small is enough for a demo.
   storage: 1Gi
+  # Measured: ~4Mi idle. The stream is never trimmed (step 3), so memory grows with
+  # messages: ~45 MB per 2 h at 20 msg/s. 256Mi = several demo runs before a reset.
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      memory: 256Mi

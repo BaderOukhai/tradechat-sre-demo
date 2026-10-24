@@ -29,6 +29,11 @@ spec:
       labels:
         app: archiver
     spec:
+      securityContext:  # same hardening as chat-api (see chat-api.yaml)
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: archiver
           image: "{{ .Values.archiver.image.repository }}:{{ .Values.archiver.image.tag }}"
@@ -38,6 +43,13 @@ spec:
           env:
             - name: REDIS_URL
               value: redis://redis:6379/0
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true  # only the /data volume is writable
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.archiver.resources | nindent 12 }}
           volumeMounts:
             - name: archive
               mountPath: /data  # ARCHIVE_DIR in the image
@@ -45,6 +57,8 @@ spec:
             httpGet:
               path: /healthz
               port: http
+            periodSeconds: 10    # archive loop dead for ~30 s -> restart; the consumer group
+            failureThreshold: 3  # resumes from its bookmark, nothing is lost
       volumes:
         - name: archive
           persistentVolumeClaim:

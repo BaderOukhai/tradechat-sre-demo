@@ -35,6 +35,19 @@ spec:
           ports:
             - name: redis
               containerPort: 6379
+          # No securityContext here: the official image starts as root to chown /data, then
+          # drops to the "redis" user. In production: a hardened image that never runs as root.
+          resources:
+            {{- toYaml .Values.redis.resources | nindent 12 }}
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: redis
+            periodSeconds: 10    # a restart reloads the AOF: only after ~30 s of silence
+            failureThreshold: 3
           volumeMounts:
             - name: data
               mountPath: /data
