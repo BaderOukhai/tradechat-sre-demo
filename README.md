@@ -1,29 +1,62 @@
 # tradechat-sre-demo
 
-[![ci](https://github.com/BaderOukhai/tradechat-sre-demo/actions/workflows/ci.yml/badge.svg)](https://github.com/BaderOukhai/tradechat-sre-demo/actions/workflows/ci.yml)
+[![ci](https://github.com/BaderOukhai/tradechat-sre-demo/actions/workflows/ci.yml/badge.svg)](https://github.com/BaderOukhai/tradechat-sre-demo/actions/workflows/ci.yml) · 🇫🇷 [Version française](README.fr.md)
 
-A miniature of a **financial messaging platform** — real-time chat between traders where **every
-message must be archived** (banks have a legal obligation to retain trader communications) —
-operated the way an SRE team would run it: SLOs, dashboards, alerts, runbooks, an incident,
-a rollback and a blameless postmortem. Everything runs locally on a 3-node Kubernetes cluster,
-at zero cloud cost.
+> **Traders chat in real time, and the law says every message must be archived.**
+> So the system makes two promises: *fast*, and *nothing lost*.
+> I built a miniature of that platform on Kubernetes — then spent as much time trying to break it.
 
-![Messaging SLO dashboard: the archiver is stopped under load, the compliance gap grows to 1 250 messages, then drains in seconds when it comes back](docs/assets/dashboard-compliance.png)
+![A bad release ships: delivery p99 jumps from 5 ms to about 500 ms, the alert fires, one command rolls it back](docs/assets/incident.gif)
 
-*The archiver is stopped under load: the compliance gap grows by 20 messages per second, the critical alert fires, and the backlog drains in seconds once the archiver is back — nothing lost.*
+*A bad release ships: delivery p99 jumps from 5 ms to ~500 ms, the alert fires, one command rolls
+it back — **161 s to detect, 79 s to recover, 0 messages lost**
+([postmortem](docs/postmortems/2026-10-25-latency-regression.md)).*
 
-## What it demonstrates
+## Act 1 — Build it: fast, and nothing lost
 
-| Promise | How |
-|---|---|
-| **Real-time** | FastAPI + WebSockets; p99 delivery ~12–17 ms under load (SLO: 99.9% < 200 ms) |
-| **Nothing lost** | a message is persisted to a Redis Stream (AOF on a volume) **before** the `202` |
-| **Everything archived** | archiver on a consumer group: write + `fsync`, **then** `XACK` (at-least-once) |
-| **Resilient** | 3 replicas spread over nodes, rolling updates with `maxUnavailable: 0`, PDB, probes |
-| **Observable** | Prometheus + Grafana: latency, traffic, errors, saturation, SLI, error budget, compliance gap |
-| **Operable** | 3 alerts with runbooks, a scripted incident drill, rollback, postmortem |
-| **Secure by default** | non-root images, read-only filesystem, no capabilities, Trivy scan in CI |
-| **AI-assisted ops, safely** | a read-only, audited MCP server so an assistant can answer *"is the platform healthy?"* |
+- A message is written to a durable log (a Redis Stream on a persistent volume) **before** the
+  trader gets `202 Accepted`.
+- Three API replicas, spread over two nodes, push it to every connected trader over WebSockets:
+  **p99 ≈ 12–17 ms** under load, against an SLO of 99.9% under 200 ms.
+- An archiver reads the same log through a consumer group and acknowledges a message only **after**
+  it is on disk: a crash can duplicate a message, never lose it.
+- Every commit goes through a pipeline that scans for secrets and vulnerabilities, **deploys to a
+  throwaway Kubernetes cluster, runs 20 simulated traders, and rejects the release if the SLO is
+  missed or a single message isn't archived** — the verdict is on the [run page](https://github.com/BaderOukhai/tradechat-sre-demo/actions/workflows/ci.yml).
+
+## Act 2 — Break it on purpose
+
+| I… | The system… | Measured |
+|---|---|---|
+| killed an API pod under load | routed around it | 0 HTTP errors, 2 399 / 2 399 messages archived ([dashboard](docs/assets/dashboard-resilience.png)) |
+| stopped the archiver | kept the backlog, paged (critical), caught up | alert after 75 s, 1 249 messages drained in < 15 s ([dashboard](docs/assets/dashboard-compliance.png)) |
+| shipped a release 300 ms slower | paged, rolled back with one command | detect 161 s, recover 79 s, 0 lost ([dashboard](docs/assets/dashboard-incident.png)) |
+| shipped a release that runs out of memory | refused to roll it out | old pods kept serving, no user impact |
+| handed deployments over to GitOps (Argo CD) | reverted my manual change by itself | drift undone in < 5 s, archive kept |
+| asked an AI assistant *"is the platform healthy?"* | answered from live alerts and runbooks — read-only, audited | every call in an audit log |
+
+## Act 3 — What breaking it taught me
+
+Breaking it on purpose found seven real problems that a green test suite didn't:
+
+1. **A Redis restart left a dead connection in the pool**: the next request failed → reconnect and retry.
+2. **The compliance metric cried wolf on every pod restart** (counters reset to 0) → measure at the source, in Redis.
+3. **`helm upgrade` silently undid a manual fix** → a fix made during an incident isn't done until it's in Git.
+4. **An alert kept paging 5 minutes after the fix** → shorter evaluation window.
+5. **Rolling updates cut in-flight requests** → a 5 s `preStop` delay → 0 errors.
+6. **Grafana ran out of memory during the incident it was showing** → sized from observation.
+7. **A kubeconfig with the cluster's private key slipped into a commit** → caught before the push,
+   then automated: secret scanning in a pre-commit hook and in CI, checked against that very file.
+
+**Proof, not promises:** [CI runs with the deploy report](https://github.com/BaderOukhai/tradechat-sre-demo/actions/workflows/ci.yml) ·
+[postmortem](docs/postmortems/2026-10-25-latency-regression.md) · [runbooks](docs/runbooks/) ·
+[CI design](docs/ci.md)
+
+---
+
+## Under the hood
+
+Everything below is the technical detail: architecture, how to run it, and the decisions behind it.
 
 ## Architecture
 
@@ -190,15 +223,6 @@ How I made sure I understand it rather than just own it:
   on-call tool, load tests in CI.
 - **Delivery:** GitOps (Argo CD) as the only path to production, progressive delivery (canary),
   Terraform with a remote, locked state.
-
-## What I learned
-
-- Measure at the source: counters restart, the system of record doesn't.
-- Test alerts by triggering them — two of mine were wrong until I did.
-- A manual fix during an incident isn't done until it's in Git: the next deploy reverts it.
-- `histogram_quantile` estimates inside a bucket: with a 300 ms fault, p99 showed ~500 ms
-  because every sample fell in the (0.3, 0.5] bucket.
-- Restore first, understand later — and write it down without blame.
 
 ## More
 
