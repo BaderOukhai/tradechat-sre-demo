@@ -1,0 +1,67 @@
+# CI: lint -> test -> build -> security scan, on every push to main and every pull request.
+# Same stages as the Jenkinsfile at the repo root (see docs/ci.md for the comparison).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read  # least privilege: the pipeline only reads the code
+
+jobs:
+  test:
+    name: lint + test (${{ matrix.project }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        project: [apps/chat-api, apps/archiver, ops-agent]
+    defaults:
+      run:
+        working-directory: ${{ matrix.project }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          version: "0.12.17"  # same uv as local and in the Dockerfiles
+      - run: uv sync --frozen  # exact versions from uv.lock
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest -q
+
+  lint-infra:
+    name: lint infra (helm, shell, terraform, loadgen)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          version: "0.12.17"
+      - uses: hashicorp/setup-terraform@v4
+      - run: helm lint deploy/helm/tradechat
+      - run: helm template tradechat deploy/helm/tradechat -f deploy/helm/values-bad-release.yaml > /dev/null
+      - run: shellcheck scripts/*.sh
+      - run: uvx ruff check --line-length 100 loadgen
+      - run: terraform -chdir=terraform fmt -check
+      - run: terraform -chdir=terraform init -backend=false && terraform -chdir=terraform validate
+
+  build-scan:
+    name: build + scan (${{ matrix.app }})
+    needs: test  # never build an image from code that fails its tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [chat-api, archiver]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build image
+        run: docker build -t tradechat/${{ matrix.app }}:${{ github.sha }} apps/${{ matrix.app }}
+      - name: Scan image (fail on fixable CRITICAL vulnerabilities)
+        # Trivy run from its official image, pinned: no third-party action in the pipeline.
+        # --ignore-unfixed: a CVE with no patch available can't be fixed by rebuilding; it is
+        # tracked, not allowed to block every build.
+        run: >
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.75.0
+          image --severity CRITICAL --ignore-unfixed --exit-code 1 --no-progress
+          tradechat/${{ matrix.app }}:${{ github.sha }}
