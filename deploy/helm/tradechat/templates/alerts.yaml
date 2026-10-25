@@ -1,0 +1,62 @@
+{{- if .Values.monitoring.enabled }}
+{{- $runbooks := "https://github.com/BaderOukhai/tradechat-sre-demo/blob/main/docs/runbooks" }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: tradechat
+spec:
+  groups:
+    - name: tradechat
+      rules:
+        - alert: HighMessageLatencyP99
+          # The value for the trader: p99 above the 200 ms SLO threshold.
+          expr: |
+            histogram_quantile(0.99, sum by (le) (rate(chat_message_delivery_seconds_bucket[1m]))) > 0.2
+          # 2 min: ignores a single slow scrape or a pod restart, but fires long before the
+          # 0.1% error budget is gone (at p99 > 200 ms, >1% of messages are already "bad").
+          for: 2m
+          labels:
+            severity: warning  # degraded experience, but messages are still delivered and archived
+          annotations:
+            summary: "Message delivery p99 above 200 ms"
+            description: {{ `"p99 delivery latency is {{ $value | humanizeDuration }} (SLO: 99.9% under 200 ms)."` }}
+            runbook_url: "{{ $runbooks }}/HighMessageLatencyP99.md"
+
+        - alert: ComplianceArchiveGap
+          # Messages persisted in the stream but not archived yet (consumer group lag + pending),
+          # measured at the source by redis_exporter. "absent" = we can't prove the archive is
+          # complete (exporter or consumer group gone): treated as a gap too.
+          expr: |
+            (
+              sum(redis_stream_group_lag{stream="messages", group="archivers"})
+              + sum(redis_stream_group_messages_pending{stream="messages", group="archivers"})
+            ) > 0
+            or absent(redis_stream_group_lag{stream="messages", group="archivers"})
+          # 1 min: a healthy archiver drains new messages in milliseconds, so a gap that lasts a
+          # full minute means archiving is stuck, not just in flight.
+          for: 1m
+          labels:
+            # Critical: every trader message must be archived by law. A gap is a potential
+            # regulatory breach for the customer bank, even if the chat itself works perfectly.
+            severity: critical
+          annotations:
+            summary: "Messages are not being archived"
+            description: {{ `"{{ $value }} message(s) persisted but not archived for more than 1 minute."` }}
+            runbook_url: "{{ $runbooks }}/ComplianceArchiveGap.md"
+
+        - alert: PodCrashLooping
+          # Between restarts the pod briefly leaves "CrashLoopBackOff": max_over_time smooths that.
+          # 2 min window (observed: 5 min kept the alert firing 5 min after the fix).
+          expr: |
+            max by (namespace, pod, container) (
+              max_over_time(kube_pod_container_status_waiting_reason{reason="CrashLoopBackOff", namespace="{{ .Release.Namespace }}"}[2m])
+            ) >= 1
+          # 1 min instead of the usual 15: demo-friendly, and a crash loop never fixes itself.
+          for: 1m
+          labels:
+            severity: warning  # replicas and maxUnavailable 0 usually keep users unaffected
+          annotations:
+            summary: "A pod is crash looping"
+            description: {{ `"{{ $labels.pod }} ({{ $labels.container }}) keeps restarting."` }}
+            runbook_url: "{{ $runbooks }}/PodCrashLooping.md"
+{{- end }}
