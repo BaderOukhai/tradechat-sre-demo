@@ -1,5 +1,7 @@
 # tradechat-sre-demo
 
+[![ci](https://github.com/BaderOukhai/tradechat-sre-demo/actions/workflows/ci.yml/badge.svg)](https://github.com/BaderOukhai/tradechat-sre-demo/actions/workflows/ci.yml)
+
 A miniature of a **financial messaging platform** — real-time chat between traders where **every
 message must be archived** (banks have a legal obligation to retain trader communications) —
 operated the way an SRE team would run it: SLOs, dashboards, alerts, runbooks, an incident,
@@ -167,7 +169,8 @@ How I made sure I understand it rather than just own it:
   private study notes, wrong answers included;
 - every claim is verified by running it: tests, a pod killed under load, alerts triggered on
   purpose, an OOMKilled release, a full incident drill with a measured timeline, the whole
-  environment rebuilt with `terraform apply`, the MCP agent queried during a live incident;
+  environment rebuilt with `terraform apply`, the MCP agent queried during a live incident, the
+  release handed over to Argo CD (GitOps) without losing the archive;
 - the bugs found along the way are documented with their diagnosis: a stale Redis connection after
   a restart, a counter reset faking a compliance gap, `helm upgrade` silently reverting a manual
   scale, an alert still firing 5 minutes after the fix, requests cut during rolling updates,
@@ -202,4 +205,4 @@ How I made sure I understand it rather than just own it:
 - [docs/ci.md](docs/ci.md) — CI pipeline (GitHub Actions + Jenkinsfile), comparison with Cloud Build
 - [terraform/README.md](terraform/README.md) — state, plan/apply, drift
 - [ops-agent/README.md](ops-agent/README.md) — the MCP server and its guardrails
-- [deploy/argocd/](deploy/argocd/) — GitOps with Argo CD: `make gitops` (the repository must be public, or Argo CD given read credentials), rollback with `git revert`
+- [deploy/argocd/](deploy/argocd/) — GitOps with Argo CD: `make gitops`, rollback with `git revert`. Verified: synced from this repository in 20 s, a manual `kubectl scale` reverted by `selfHeal` in < 5 s, archive kept across the hand-over from Helm
