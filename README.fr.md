@@ -1,6 +1,6 @@
 # tradechat-sre-demo
 
-[![ci](https://github.com/BaderOukhai/tradechat-sre-demo/actions/workflows/ci.yml/badge.svg)](https://github.com/BaderOukhai/tradechat-sre-demo/actions/workflows/ci.yml) · 🇬🇧 [English version](README.md)
+[![ci](https://github.com/BaderOukhai/tradechat-sre-demo/actions/workflows/ci.yml/badge.svg)](https://github.com/BaderOukhai/tradechat-sre-demo/actions/workflows/ci.yml) · 🇬🇧 [English version](README.md) · **[L'étude de cas en une minute →](https://baderoukhai.com/tradechat)**
 
 > **Des traders échangent en temps réel, et la loi impose d'archiver chaque message.**
 > Le système fait donc deux promesses : *rapide*, et *rien de perdu*.

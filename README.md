@@ -1,6 +1,6 @@
 # tradechat-sre-demo
 
-[![ci](https://github.com/BaderOukhai/tradechat-sre-demo/actions/workflows/ci.yml/badge.svg)](https://github.com/BaderOukhai/tradechat-sre-demo/actions/workflows/ci.yml) · 🇫🇷 [Version française](README.fr.md)
+[![ci](https://github.com/BaderOukhai/tradechat-sre-demo/actions/workflows/ci.yml/badge.svg)](https://github.com/BaderOukhai/tradechat-sre-demo/actions/workflows/ci.yml) · 🇫🇷 [Version française](README.fr.md) · **[One-minute case study →](https://baderoukhai.com/en/tradechat)**
 
 > **Traders chat in real time, and the law says every message must be archived.**
 > So the system makes two promises: *fast*, and *nothing lost*.
