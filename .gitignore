@@ -15,9 +15,14 @@ data/
 *.pem
 *.key
 kubeconfig*
+# kubeconfig written by the Terraform kind provider (contains the cluster's client key)
+terraform/*-config
 *.tfstate
 *.tfstate.*
 .terraform/
+
+# MCP ops agent audit trail (local, may contain operator questions)
+audit.log
 
 # OS / editors
 .DS_Store

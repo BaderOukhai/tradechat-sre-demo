@@ -1,0 +1,24 @@
+[project]
+name = "ops-agent"
+version = "1.0.0"
+description = "Read-only MCP server exposing the messaging platform's SLO, alerts and runbooks"
+requires-python = ">=3.12"
+dependencies = [
+    "mcp>=2.3,<3",   # official Python SDK; v2 renamed FastMCP to MCPServer
+    "httpx>=0.28",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.8",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+extend-select = ["I"]  # sort imports

@@ -1,0 +1,12 @@
+# Argo CD, trimmed for a laptop: no SSO (dex), no notifications, no ApplicationSets.
+# UI: kubectl -n argocd port-forward svc/argocd-server 8080:443  ->  https://localhost:8080
+# Admin password: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d
+dex:
+  enabled: false
+notifications:
+  enabled: false
+applicationSet:
+  enabled: false
+configs:
+  params:
+    server.insecure: true  # TLS terminated by the port-forward in this local demo only

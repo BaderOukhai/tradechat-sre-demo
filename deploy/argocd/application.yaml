@@ -1,0 +1,21 @@
+# GitOps: Argo CD keeps the cluster equal to what is on the main branch of the repository.
+# A deploy = a merged commit; a rollback = "git revert" + push. Every change is a reviewed,
+# signed, timestamped commit: the audit trail a bank's change management asks for.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tradechat
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/BaderOukhai/tradechat-sre-demo.git
+    targetRevision: main
+    path: deploy/helm/tradechat  # rendered with "helm template", values.yaml from Git
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true     # an object removed from Git is removed from the cluster
+      selfHeal: true  # a manual "kubectl scale" (drift) is reverted to what Git says
