@@ -1,0 +1,51 @@
+{{- if .Values.monitoring.enabled }}
+# "You build it, you own it": the service ships its own scraping config, alerts and dashboard,
+# versioned and deployed together with the code they observe.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: chat-api
+spec:
+  selector:
+    matchLabels:
+      app: chat-api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s  # same as the Prometheus default set in deploy/monitoring/values.yaml
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: archiver
+spec:
+  selector:
+    matchLabels:
+      app: archiver
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: redis
+spec:
+  selector:
+    matchLabels:
+      app: redis
+  endpoints:
+    - port: metrics  # the redis_exporter sidecar
+      interval: 15s
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: messaging-slo-dashboard
+  labels:
+    grafana_dashboard: "1"  # the Grafana sidecar loads every ConfigMap carrying this label
+data:
+  messaging-slo.json: |-
+{{ .Files.Get "dashboards/messaging-slo.json" | indent 4 }}
+{{- end }}

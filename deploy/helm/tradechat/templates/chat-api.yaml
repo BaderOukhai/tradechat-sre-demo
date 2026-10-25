@@ -75,12 +75,16 @@ metadata:
   labels:
     app: chat-api
 spec:
+  type: {{ .Values.chatApi.service.type }}
   selector:
     app: chat-api
   ports:
     - name: http
       port: 8000
       targetPort: http
+      {{- if eq .Values.chatApi.service.type "NodePort" }}
+      nodePort: {{ .Values.chatApi.service.nodePort }}
+      {{- end }}
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget

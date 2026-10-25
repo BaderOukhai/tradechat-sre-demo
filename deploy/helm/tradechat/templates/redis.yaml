@@ -51,6 +51,27 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data
+        # Sidecar: same pod, so it reaches Redis on localhost. Measures the compliance gap at the
+        # source (stream lag + pending), independently of the archiver it is meant to watch.
+        - name: exporter
+          image: {{ .Values.redis.exporter.image }}
+          args: ["--redis.addr=redis://localhost:6379", "--check-streams=messages"]
+          ports:
+            - name: metrics
+              containerPort: 9121
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 59000  # the image's own non-root user
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 64Mi  # a Go binary using ~10Mi: 64Mi is ample
       volumes:
         - name: data
           persistentVolumeClaim:
@@ -69,3 +90,6 @@ spec:
     - name: redis
       port: 6379
       targetPort: redis
+    - name: metrics
+      port: 9121
+      targetPort: metrics

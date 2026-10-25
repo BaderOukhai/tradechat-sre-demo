@@ -9,6 +9,11 @@ chatApi:
     tag: "1.0.1"
   # Fault injection (step 9): 300 simulates a bad release. 0 = healthy.
   faultLatencyMs: 0
+  # NodePort 30080 is mapped to localhost:8000 by deploy/kind-config.yaml. In a cloud cluster
+  # this would be ClusterIP behind an Ingress / load balancer.
+  service:
+    type: NodePort
+    nodePort: 30080
   # Measured: ~55Mi idle (cgroup memory.current). Request = what the scheduler reserves;
   # memory limit = 2x usage for load spikes, beyond that the pod is OOMKilled.
   # No CPU limit on purpose: CPU throttling would add latency and hurt the 200 ms SLO.
@@ -45,3 +50,11 @@ redis:
       memory: 32Mi
     limits:
       memory: 256Mi
+  # Sidecar exporting Redis and stream metrics (lag + pending of the archiver consumer group).
+  exporter:
+    image: oliver006/redis_exporter:v1.96.0
+
+# ServiceMonitors (scraping), alert rules and the Grafana dashboard. They need the CRDs of
+# kube-prometheus-stack: install it first (make monitoring), or set false without it.
+monitoring:
+  enabled: true

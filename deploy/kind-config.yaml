@@ -4,5 +4,16 @@ kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
   - role: control-plane
+    # Expose NodePort Services on localhost. Unlike "kubectl port-forward" (pinned to a single
+    # pod), traffic goes through the Service to every ready pod: killing a pod doesn't cut the demo.
+    extraPortMappings:
+      - containerPort: 30080  # chat-api
+        hostPort: 8000
+      - containerPort: 30300  # Grafana
+        hostPort: 3000
+      - containerPort: 30090  # Prometheus
+        hostPort: 9090
+      - containerPort: 30093  # Alertmanager
+        hostPort: 9093
   - role: worker
   - role: worker
