@@ -1,0 +1,6 @@
+# "v1.1": a simulated bad release for the incident drill (step 9).
+# Same images, but every message waits an extra 300 ms before being persisted and fanned out,
+# like a slow dependency or an accidental synchronous call shipped to production.
+# Usage: make bad-release (deploy it), make rollback (undo it), make incident (full drill).
+chatApi:
+  faultLatencyMs: 300  # > 200 ms: every message breaks the SLO threshold

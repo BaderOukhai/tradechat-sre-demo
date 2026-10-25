@@ -70,4 +70,10 @@ grafana:
       cpu: 50m
       memory: 128Mi
     limits:
-      memory: 512Mi  # observed: OOMKilled at 256Mi during first-start database migrations
+      # Observed: OOMKilled at 256Mi (first-start migrations), then at 512Mi with the
+      # dashboard refreshing every 5 s.
+      memory: 1Gi
+  env:
+    # Soft limit for the Go garbage collector: collect harder near 800MiB instead of
+    # growing until the kernel kills the container at 1Gi.
+    GOMEMLIMIT: 800MiB

@@ -1,12 +1,13 @@
 # tradechat-sre-demo — entry points.
 # Full local environment: make cluster images monitoring deploy, then make load.
 .DEFAULT_GOAL := help
-.PHONY: help tools up down load cluster cluster-delete images monitoring deploy urls
+.PHONY: help tools up down load cluster cluster-delete images monitoring deploy urls bad-release rollback incident gitops
 
 TOOLS := docker kind kubectl helm python3.12 git uv
 CLUSTER := tradechat
 # kube-prometheus-stack chart version, pinned for reproducibility
 KPS_VERSION := 92.13.1
+ARGOCD_VERSION := 10.11.1
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-15s %s\n", $$1, $$2}'
@@ -60,3 +61,21 @@ urls: ## Print the local URLs and the Grafana admin password
 
 load: ## Run simulated traders against localhost:8000 (e.g. make load ARGS="--duration 30")
 	uv run loadgen/loadgen.py $(ARGS)
+
+bad-release: ## Deploy the simulated bad release v1.1 (+300 ms per message)
+	helm upgrade tradechat deploy/helm/tradechat -f deploy/helm/values-bad-release.yaml --wait --timeout 3m
+
+rollback: ## Roll the tradechat release back to the previous revision
+	helm rollback tradechat --wait --timeout 3m
+
+incident: ## Full incident drill with a timeline: bad release -> alert -> rollback -> recovery
+	./scripts/incident.sh
+
+# --- GitOps (optional) -----------------------------------------------------------------------
+
+gitops: ## Hand the tradechat release over to Argo CD (needs the repo to be public; PVCs are kept)
+	helm repo add argo https://argoproj.github.io/argo-helm --force-update
+	helm upgrade --install argocd argo/argo-cd --version $(ARGOCD_VERSION) \
+		--namespace argocd --create-namespace -f deploy/argocd/values.yaml --wait --timeout 5m
+	helm uninstall tradechat --ignore-not-found
+	kubectl apply -f deploy/argocd/application.yaml

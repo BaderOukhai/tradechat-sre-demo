@@ -55,6 +55,13 @@ spec:
               drop: ["ALL"]
           resources:
             {{- toYaml .Values.chatApi.resources | nindent 12 }}
+          lifecycle:
+            preStop:
+              # On termination, the pod leaves the endpoints and receives SIGTERM at the same time:
+              # for a moment kube-proxy still routes requests to it. Wait 5 s (endpoint propagation
+              # to every node) before stopping. Observed without it: 3 POSTs cut during a rollout.
+              exec:
+                command: ["sleep", "5"]
           readinessProbe:
             httpGet:
               path: /readyz

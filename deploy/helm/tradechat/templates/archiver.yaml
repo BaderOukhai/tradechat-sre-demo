@@ -2,6 +2,9 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: archive-data
+  annotations:
+    # Never deleted by "helm uninstall": the archive is legal evidence, it outlives any release.
+    helm.sh/resource-policy: keep
 spec:
   accessModes:
     - ReadWriteOnce  # mounted by one node at a time: fine for a single archiver

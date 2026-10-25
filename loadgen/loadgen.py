@@ -33,7 +33,9 @@ async def listen(ws_url: str, room: str, me: str, connected: asyncio.Event) -> N
                     msg = json.loads(raw)
                     if msg["sender"] == me:  # same machine, so the same clock as client_ts
                         latencies.append(time.time() - float(msg["client_ts"]))
-        except (OSError, websockets.ConnectionClosed):
+        # WebSocketException covers closed connections and failed handshakes (e.g. reconnecting
+        # to a pod that is shutting down during a rolling update).
+        except (OSError, websockets.WebSocketException):
             errors["ws_disconnect"] += 1
             await asyncio.sleep(1)  # retry without hammering a recovering server
 
