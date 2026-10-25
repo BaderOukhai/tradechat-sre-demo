@@ -1,4 +1,5 @@
-# CI: lint -> test -> build -> security scan, on every push to main and every pull request.
+# CI: secrets -> lint -> test -> build -> security scan -> deploy + load test, on every push to main
+# and every pull request. Each job writes a short report on the run page (GITHUB_STEP_SUMMARY).
 # Same stages as the Jenkinsfile at the repo root (see docs/ci.md for the comparison).
 name: ci
 
@@ -11,6 +12,18 @@ permissions:
   contents: read  # least privilege: the pipeline only reads the code
 
 jobs:
+  secrets:
+    name: secret scan (full history)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # every commit, not only the last one: a deleted secret is still leaked
+      - name: gitleaks
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.30.1 git /repo --redact --no-banner
+          echo "✅ **Secrets:** no secret found in $(git rev-list --count HEAD) commits (gitleaks)" >> "$GITHUB_STEP_SUMMARY"
+
   test:
     name: lint + test (${{ matrix.project }})
     runs-on: ubuntu-latest
@@ -28,7 +41,9 @@ jobs:
       - run: uv sync --frozen  # exact versions from uv.lock
       - run: uv run ruff check .
       - run: uv run ruff format --check .
-      - run: uv run pytest -q
+      - run: |
+          uv run pytest -q | tee pytest.out
+          echo "✅ **${{ matrix.project }}:** lint OK, $(tail -1 pytest.out)" >> "$GITHUB_STEP_SUMMARY"
 
   lint-infra:
     name: lint infra (helm, shell, terraform, loadgen)
@@ -45,10 +60,11 @@ jobs:
       - run: uvx ruff check --line-length 100 loadgen
       - run: terraform -chdir=terraform fmt -check
       - run: terraform -chdir=terraform init -backend=false && terraform -chdir=terraform validate
+      - run: echo "✅ **Infrastructure code:** Helm chart, shell scripts, Terraform and load generator lint clean" >> "$GITHUB_STEP_SUMMARY"
 
   build-scan:
     name: build + scan (${{ matrix.app }})
-    needs: test  # never build an image from code that fails its tests
+    needs: [secrets, test]  # never build an image from code that leaks secrets or fails its tests
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -61,7 +77,46 @@ jobs:
         # Trivy run from its official image, pinned: no third-party action in the pipeline.
         # --ignore-unfixed: a CVE with no patch available can't be fixed by rebuilding; it is
         # tracked, not allowed to block every build.
-        run: >
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.75.0
-          image --severity CRITICAL --ignore-unfixed --exit-code 1 --no-progress
-          tradechat/${{ matrix.app }}:${{ github.sha }}
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.75.0 \
+            image --severity CRITICAL --ignore-unfixed --exit-code 1 --no-progress \
+            tradechat/${{ matrix.app }}:${{ github.sha }}
+          echo "✅ **${{ matrix.app }} image:** built from \`${GITHUB_SHA::7}\`, no fixable CRITICAL vulnerability (Trivy)" >> "$GITHUB_STEP_SUMMARY"
+
+  e2e:
+    name: deploy + load test on a throwaway cluster
+    needs: build-scan  # only deploy what passed tests and scans
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0, pinned by SHA (third-party action)
+        with:
+          version: "0.12.17"
+      - name: Create a 3-node kind cluster
+        run: |
+          # Pinned version, checksum verified: a downloaded binary is part of the supply chain too.
+          curl -fsSLo kind https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64
+          echo "aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d  kind" | sha256sum --check
+          sudo install kind /usr/local/bin/kind
+          kind create cluster --name tradechat --config deploy/kind-config.yaml --wait 2m
+      - name: Build and load the images, tagged with the commit SHA
+        run: |
+          for app in chat-api archiver; do docker build -q -t "tradechat/$app:$GITHUB_SHA" "apps/$app"; done
+          kind load docker-image "tradechat/chat-api:$GITHUB_SHA" "tradechat/archiver:$GITHUB_SHA" --name tradechat
+      - name: Deploy with Helm (no monitoring stack in CI)
+        run: |
+          helm upgrade --install tradechat deploy/helm/tradechat --wait --timeout 3m \
+            --set monitoring.enabled=false \
+            --set chatApi.image.tag="$GITHUB_SHA" --set archiver.image.tag="$GITHUB_SHA"
+          kubectl get pods -o wide
+      - name: Load test (20 simulated traders, 30 s)
+        run: uv run loadgen/loadgen.py --duration 30 --json-out load.json
+      - name: SLO and compliance verdict
+        run: ./scripts/e2e-check.sh load.json
+      - name: Diagnostics
+        if: failure()
+        run: |
+          kubectl get pods -o wide
+          kubectl describe pods | tail -80
+          kubectl logs deploy/chat-api --tail=50 || true
+          kubectl logs deploy/archiver --tail=50 || true

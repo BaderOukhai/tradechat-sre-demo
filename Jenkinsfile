@@ -10,6 +10,13 @@ pipeline {
     }
 
     stages {
+        stage('Secret scan') {
+            steps {
+                // Full history: a secret deleted in a later commit is still leaked.
+                sh 'docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.30.1 git /repo --redact --no-banner'
+            }
+        }
+
         stage('Lint & test') {
             parallel {
                 stage('chat-api') {
@@ -51,6 +58,21 @@ pipeline {
                         tradechat/$app:${GIT_COMMIT}
                     done
                 '''
+            }
+        }
+
+        stage('Deploy + load test') {
+            // Throwaway kind cluster: deploy this commit with Helm, run 20 simulated traders,
+            // reject the build if the SLO is missed or a message is not archived.
+            steps {
+                sh 'kind create cluster --name ci-${BUILD_NUMBER} --config deploy/kind-config.yaml --wait 2m'
+                sh 'kind load docker-image tradechat/chat-api:${GIT_COMMIT} tradechat/archiver:${GIT_COMMIT} --name ci-${BUILD_NUMBER}'
+                sh 'helm upgrade --install tradechat deploy/helm/tradechat --wait --timeout 3m --set monitoring.enabled=false --set chatApi.image.tag=${GIT_COMMIT} --set archiver.image.tag=${GIT_COMMIT}'
+                sh 'uv run loadgen/loadgen.py --duration 30 --json-out load.json'
+                sh './scripts/e2e-check.sh load.json'
+            }
+            post {
+                always { sh 'kind delete cluster --name ci-${BUILD_NUMBER} || true' }
             }
         }
     }

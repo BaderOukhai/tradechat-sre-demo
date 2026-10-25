@@ -1,7 +1,7 @@
 # tradechat-sre-demo — entry points.
 # Full local environment: make cluster images monitoring deploy, then make load.
 .DEFAULT_GOAL := help
-.PHONY: help tools up down load cluster cluster-delete images monitoring deploy urls bad-release rollback incident gitops
+.PHONY: help tools hooks up down load cluster cluster-delete images monitoring deploy urls bad-release rollback incident gitops
 
 TOOLS := docker kind kubectl helm python3.12 git uv
 CLUSTER := tradechat
@@ -18,6 +18,9 @@ tools: ## Check that every required tool is installed
 		else echo "MISSING  $$t  (brew install $$t)"; exit 1; fi; \
 	done
 	@docker info >/dev/null 2>&1 && echo "ok       docker daemon running" || (echo "MISSING  docker daemon (start Docker Desktop)"; exit 1)
+
+hooks: ## Install the pre-commit hook that blocks commits containing secrets (gitleaks)
+	uvx pre-commit install
 
 # --- Local dev loop (docker compose) ---------------------------------------------------------
 

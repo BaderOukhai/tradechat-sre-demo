@@ -71,22 +71,37 @@ async def report(start: float) -> None:
         )
 
 
-def summary(duration: float) -> None:
+def summary(duration: float) -> dict:
     sent, received = counts["sent"], len(latencies)
+    result = {
+        "sent": sent,
+        "received": received,
+        "missing": sent - received,
+        "errors": dict(errors),
+        "rate": round(sent / duration, 1),
+    }
     print(f"\n--- summary ({duration:.0f}s) ---")
     print(
-        f"sent={sent} ({sent / duration:.1f} msg/s)  received={received}  "
-        f"missing={sent - received}  errors={dict(errors)}"
+        f"sent={sent} ({result['rate']} msg/s)  received={received}  "
+        f"missing={result['missing']}  errors={result['errors']}"
     )
     if received >= 2:
         q = statistics.quantiles(latencies, n=100)  # q[49] = p50, q[94] = p95, q[98] = p99
+        for name, value in (
+            ("p50", q[49]),
+            ("p95", q[94]),
+            ("p99", q[98]),
+            ("max", max(latencies)),
+        ):
+            result[f"{name}_ms"] = round(value * 1000, 1)
         print(
-            f"latency ms: p50={q[49] * 1000:.1f}  p95={q[94] * 1000:.1f}  "
-            f"p99={q[98] * 1000:.1f}  max={max(latencies) * 1000:.1f}"
+            f"latency ms: p50={result['p50_ms']}  p95={result['p95_ms']}  "
+            f"p99={result['p99_ms']}  max={result['max_ms']}"
         )
+    return result
 
 
-async def main(args: argparse.Namespace) -> None:
+async def main(args: argparse.Namespace) -> dict:
     ws_url = args.url.replace("http", "ws", 1)
     traders = [(f"trader-{i}", f"desk-{i % args.rooms}") for i in range(args.traders)]
     ready = [asyncio.Event() for _ in traders]
@@ -106,7 +121,7 @@ async def main(args: argparse.Namespace) -> None:
     await asyncio.sleep(2)  # let in-flight messages come back before counting
     for task in [*listeners, reporter]:
         task.cancel()
-    summary(args.duration)
+    return summary(args.duration)
 
 
 if __name__ == "__main__":
@@ -119,4 +134,9 @@ if __name__ == "__main__":
     p.add_argument("--rate", type=float, default=20)
     # 120 s: several 15 s Prometheus scrapes, enough for rate() over 1 min windows.
     p.add_argument("--duration", type=float, default=120)
-    asyncio.run(main(p.parse_args()))
+    p.add_argument("--json-out", help="also write the summary as JSON to this file")
+    args = p.parse_args()
+    result = asyncio.run(main(args))
+    if args.json_out:  # machine-readable result, used by the CI end-to-end check
+        with open(args.json_out, "w") as f:
+            json.dump(result, f)

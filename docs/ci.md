@@ -1,17 +1,25 @@
 # CI/CD
 
-Every push to `main` and every pull request runs the same four stages, defined twice on purpose:
+Every push to `main` and every pull request runs the same stages, defined twice on purpose:
 `.github/workflows/ci.yml` (GitHub Actions, the one that actually runs for this repo) and the
 `Jenkinsfile` (declarative Jenkins pipeline, same stages, for teams on Jenkins).
 
 | Stage | What | Why |
 |---|---|---|
+| Secret scan | gitleaks on the **full history** (also a pre-commit hook: `make hooks`) | a secret deleted in a later commit is still leaked; verified that it catches a kubeconfig client key |
 | Lint & test | `ruff check`, `ruff format --check`, `pytest` for chat-api, archiver, ops-agent | fast feedback first, exact dependency versions from `uv.lock` (`--frozen`) |
 | Lint infra | `helm lint` + render the bad-release values, `shellcheck`, `terraform fmt/validate`, ruff on the load generator | infrastructure is code too: it breaks the same way |
 | Build | `docker build` per service, tagged with the commit SHA | an image is traceable to the exact commit it was built from |
 | Security scan | Trivy on each image, fails on **fixable CRITICAL** vulnerabilities | security is part of "done"; unfixable CVEs are tracked, not allowed to block every build |
+| Deploy + load test | throwaway 3-node kind cluster, Helm install of the SHA-tagged images, 20 simulated traders for 30 s, `scripts/e2e-check.sh` | the pipeline tests the **deployment**, not only the code: rejected if p99 ≥ 200 ms, any HTTP error, or a message not archived |
 
-Build/scan only runs if the tests pass (`needs: test`), and the workflow has read-only permissions.
+Every job writes one line to the run page (`GITHUB_STEP_SUMMARY`): opening a run shows the
+verdict — tests, secrets, scans, and the SLO/compliance table of the deployed commit — without
+reading logs.
+
+Build/scan only runs if the secret scan and the tests pass, the deployment test only on scanned
+images, and the workflow has read-only permissions. Third-party actions and downloaded binaries
+are pinned (commit SHA, checksum).
 
 ## GitHub Actions vs Jenkins vs Cloud Build
 

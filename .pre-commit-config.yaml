@@ -1,0 +1,7 @@
+# Local guard: block a commit that contains a secret, before it ever reaches the remote.
+# The CI scans the full history again (defence in depth). Install once: make hooks
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks-docker  # runs the official gitleaks image: no Go toolchain needed
